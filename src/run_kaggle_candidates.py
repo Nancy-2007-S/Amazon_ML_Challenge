@@ -12,7 +12,7 @@ from collections import defaultdict, Counter
 
 sys.path.insert(0, "src")
 from normalization import normalize_name, normalize_address
-from blocking import row_keys
+from blocking import all_keys_for_row
 
 def count_freq(path):
     freq = Counter()
@@ -21,7 +21,7 @@ def count_freq(path):
         for eid, ctr, nn, na in zip(chunk['entity_id'], chunk['country'], 
                                     chunk['business_name'].apply(normalize_name), 
                                     chunk['business_address'].apply(normalize_address)):
-            for k_type, k_val in row_keys(ctr, nn, na):
+            for k_type, k_val in all_keys_for_row(ctr, nn, na):
                 freq[k_val] += 1
     return freq
 
@@ -32,7 +32,7 @@ def build_index(path, ok_keys):
         for eid, ctr, nn, na in zip(chunk['entity_id'], chunk['country'], 
                                     chunk['business_name'].apply(normalize_name), 
                                     chunk['business_address'].apply(normalize_address)):
-            for k_type, k_val in row_keys(ctr, nn, na):
+            for k_type, k_val in all_keys_for_row(ctr, nn, na):
                 if k_val in ok_keys:
                     if k_type == 'exact': exact_idx[k_val].add(eid)
                     else: tok_idx[k_val].add(eid)
@@ -52,7 +52,7 @@ def generate_candidates(s1_path, exact_idx, tok_idx, outfile):
                 cands = set()
                 ctr_str = str(ctr).lower().strip() if str(ctr) != 'nan' else ''
                 if ctr_str:
-                    for k_type, k_val in row_keys(ctr_str, nn, na):
+                    for k_type, k_val in all_keys_for_row(ctr_str, nn, na):
                         if k_type == 'exact' and k_val in exact_idx: cands |= exact_idx[k_val]
                         elif k_val in tok_idx: cands |= tok_idx[k_val]
                 
