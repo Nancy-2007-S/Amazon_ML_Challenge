@@ -12,9 +12,9 @@ Full-dataset run: see blocking.py generate_candidates() — use SageMaker.
 import sys, os, json, statistics
 import pandas as pd
 
-DATA = "d:/AmazonML/student_resource/dataset/train/"
-OUT  = "c:/Users/nancy/OneDrive/Documents/projects/AmazonML/student_resource/"
-sys.path.insert(0, "d:/AmazonML/student_resource/src")
+DATA = "dataset/train/"
+OUT  = "output/"
+sys.path.insert(0, "src")
 
 from normalization import normalize_name, normalize_address
 from blocking import generate_candidates_from_dfs, evaluate_recall

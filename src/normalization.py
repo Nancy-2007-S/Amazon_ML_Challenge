@@ -408,8 +408,8 @@ def run_smoke_tests(out_path: str):
 # ── entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    DATA_DIR  = "d:/AmazonML/student_resource/dataset/train/"
-    OUT_DIR   = "c:/Users/nancy/OneDrive/Documents/projects/AmazonML/student_resource/"
+    DATA_DIR  = "dataset/train/"
+    OUT_DIR   = "output/"
 
     SOURCES = [
         DATA_DIR + "train_source1.tsv",

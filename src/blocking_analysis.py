@@ -8,12 +8,12 @@ Peak RAM: < 300 MB.
 import pandas as pd
 import json
 
-DATA = "d:/AmazonML/student_resource/dataset/train/"
-OUT  = "c:/Users/nancy/OneDrive/Documents/projects/AmazonML/student_resource/"
+DATA = "dataset/train/"
+OUT  = "output/"
 
 # ── imports from Stage 2 ──────────────────────────────────────────────────────
 import sys, os
-sys.path.insert(0, "d:/AmazonML/student_resource/src")
+sys.path.insert(0, "src")
 from normalization import normalize_name, normalize_address
 
 # ─────────────────────────────────────────────────────────────────────────────
