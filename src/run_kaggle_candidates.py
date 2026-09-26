@@ -57,12 +57,14 @@ def generate_candidates(s1_path, exact_idx, tok_idx, outfile):
                         elif k_val in tok_idx: cands |= tok_idx[k_val]
                 
                 cands.discard(eid)
+                if len(cands) > 150:
+                    cands = set(list(cands)[:150])
                 cand_str = ",".join(sorted(cands))
                 f.write(f"{eid}\t{cand_str}\n")
 
 if __name__ == "__main__":
     os.makedirs("output", exist_ok=True)
-    THRESHOLD = 15000
+    THRESHOLD = 1000
     
     print("=== TRAIN SET BLOCKING ===")
     print("Pass 1: S2 Frequencies...")
