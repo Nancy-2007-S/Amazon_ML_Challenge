@@ -5,6 +5,7 @@ import numpy as np
 import lightgbm as lgb
 from feature_engineering import engineer_features
 from run_kaggle_candidates import count_freq, build_index, generate_candidates
+import os
 
 def generate_test_candidates():
     print("=== TEST SET BLOCKING ===")
@@ -37,78 +38,71 @@ def infer_test_matches():
     print(f"Loaded Optimal Threshold: {best_thresh}")
     
     model = lgb.Booster(model_file='output/lgbm_model.txt')
+
+    print("Loading Test Datasets into RAM for fast lookup (10GB RAM peak)...")
+    # Load once, keep purely strings to minimize memory
+    s1 = pd.read_csv("dataset/test/test_source1.tsv", sep="\t", dtype=str, keep_default_na=False, usecols=['entity_id', 'business_name', 'business_address', 'country']).set_index('entity_id')
+    print("S1 Loaded.")
+    s2 = pd.read_csv("dataset/test/test_source2.tsv", sep="\t", dtype=str, keep_default_na=False, usecols=['entity_id', 'business_name', 'business_address', 'country']).set_index('entity_id')
+    print("S2 Loaded.")
+    s3 = pd.read_csv("dataset/test/test_source3.tsv", sep="\t", dtype=str, keep_default_na=False, usecols=['entity_id', 'business_name', 'business_address', 'country']).set_index('entity_id')
+    print("S3 Loaded.")
+
+    # Open output file
+    out_f = open('output/matching_results.tsv', 'w', encoding='utf-8')
+    out_f.write("source1_entity_id\tmatched_entity_ids\n")
     
-    # 1. Load Candidates and create pairing target df
-    cands = pd.read_csv("output/candidate_pairs.tsv", sep="\t", dtype=str, keep_default_na=False)
+    print("Processing candidate pairs in chunks...")
+    reader = pd.read_csv("output/candidate_pairs.tsv", sep="\t", dtype=str, keep_default_na=False, chunksize=100_000)
     
-    # Store the S1 IDs to guarantee every S1 exists in the final submission
-    all_s1_ids = cands['source1_entity_id'].unique()
-    
-    cands['cand_list'] = cands['candidate_entity_ids'].apply(
-        lambda x: [m.strip() for m in x.split(',') if m.strip()] if x.strip() else []
-    )
-    
-    # Only evaluate pairs that actually exist (ignore ones with empty candidate sets)
-    pairs_df = cands.explode('cand_list').rename(columns={'cand_list': 'target_id'}).dropna(subset=['target_id'])
-    pairs_df = pairs_df[['source1_entity_id', 'target_id']]
-    del cands; gc.collect()
-    
-    if len(pairs_df) > 0:
-        print(f"Total Test Pairs to Evaluate: {len(pairs_df)}")
+    for i, chunk in enumerate(reader):
+        all_s1_ids = chunk['source1_entity_id'].unique()
+        chunk['cand_list'] = chunk['candidate_entity_ids'].apply(
+            lambda x: [m.strip() for m in x.split(',') if m.strip()] if x.strip() else []
+        )
+        pairs_df = chunk.explode('cand_list').rename(columns={'cand_list': 'target_id'}).dropna(subset=['target_id'])
         
-        # 2. Sequential Merging of Data to prevent OOM
-        print("Merging Test S1 Data...")
-        s1 = pd.read_csv("dataset/test/test_source1.tsv", sep="\t", dtype=str, keep_default_na=False, usecols=['entity_id', 'business_name', 'business_address', 'country'])
-        s1 = s1.rename(columns={'business_name': 's1_name', 'business_address': 's1_addr', 'country': 's1_country'})
-        df = pairs_df.merge(s1, left_on='source1_entity_id', right_on='entity_id', how='left').drop(columns=['entity_id'])
-        del s1; gc.collect()
-
-        print("Merging Test S2 Data...")
-        s2 = pd.read_csv("dataset/test/test_source2.tsv", sep="\t", dtype=str, keep_default_na=False, usecols=['entity_id', 'business_name', 'business_address', 'country'])
-        s2 = s2.rename(columns={'business_name': 't_name', 'business_address': 't_addr', 'country': 't_country'})
-        df = df.merge(s2, left_on='target_id', right_on='entity_id', how='left').drop(columns=['entity_id'])
-        del s2; gc.collect()
-
-        print("Merging Test S3 Data...")
-        s3 = pd.read_csv("dataset/test/test_source3.tsv", sep="\t", dtype=str, keep_default_na=False, usecols=['entity_id', 'business_name', 'business_address', 'country'])
-        s3 = s3.rename(columns={'business_name': 't_name_3', 'business_address': 't_addr_3', 'country': 't_country_3'})
-        df = df.merge(s3, left_on='target_id', right_on='entity_id', how='left').drop(columns=['entity_id'])
-        del s3; gc.collect()
-
-        # Consolidate S2/S3
-        df['business_name'] = df['t_name'].fillna('') + df['t_name_3'].fillna('')
-        df['business_address'] = df['t_addr'].fillna('') + df['t_addr_3'].fillna('')
-        df['country'] = df['t_country'].fillna('') + df['t_country_3'].fillna('')
-        df.drop(columns=['t_name', 't_addr', 't_country', 't_name_3', 't_addr_3', 't_country_3'], inplace=True)
+        if len(pairs_df) == 0:
+            for s1_id in all_s1_ids: out_f.write(f"{s1_id}\t\n")
+            continue
+            
+        pairs_df = pairs_df[['source1_entity_id', 'target_id']]
+        
+        # Build features for this chunk dataframe
+        df = pairs_df.copy()
+        
+        # Map S1 data
+        df['s1_name'] = df['source1_entity_id'].map(s1['business_name']).fillna('')
+        df['s1_addr'] = df['source1_entity_id'].map(s1['business_address']).fillna('')
+        df['s1_country'] = df['source1_entity_id'].map(s1['country']).fillna('')
+        
+        # Map target data (checking if it starts with S2 or S3)
+        def get_t_name(tid): return s2.at[tid, 'business_name'] if tid.startswith('S2-') and tid in s2.index else (s3.at[tid, 'business_name'] if tid in s3.index else '')
+        def get_t_addr(tid): return s2.at[tid, 'business_address'] if tid.startswith('S2-') and tid in s2.index else (s3.at[tid, 'business_address'] if tid in s3.index else '')
+        def get_t_ctry(tid): return s2.at[tid, 'country'] if tid.startswith('S2-') and tid in s2.index else (s3.at[tid, 'country'] if tid in s3.index else '')
+        
+        df['business_name'] = df['target_id'].map(get_t_name)
+        df['business_address'] = df['target_id'].map(get_t_addr)
+        df['country'] = df['target_id'].map(get_t_ctry)
         
         s1_df = df[['s1_name', 's1_addr', 's1_country']].rename(columns={'s1_name':'business_name', 's1_addr':'business_address', 's1_country':'country'})
         t_df = df[['business_name', 'business_address', 'country']]
         
-        print("Scoring Features...")
         X = engineer_features(s1_df, t_df)
-        
-        # 3. Model Prediction
-        print("Predicting matches...")
         probs = model.predict(X)
         df['is_match'] = (probs >= best_thresh).astype(int)
         
-        # Keep only the rows predicted as true matches
         matches = df[df['is_match'] == 1]
-    else:
-        # Failsafe if literally no candidates triggered (unlikely)
-        matches = pd.DataFrame(columns=['source1_entity_id', 'target_id'])
-
-    # 4. Format the final output
-    print("Formatting Final Output...")
-    results_map = matches.groupby('source1_entity_id')['target_id'].apply(lambda x: ','.join(sorted(set(x)))).to_dict()
-    
-    with open('output/matching_results.tsv', 'w', encoding='utf-8') as f:
-        f.write("source1_entity_id\tmatched_entity_ids\n")
+        results_map = matches.groupby('source1_entity_id')['target_id'].apply(lambda x: ','.join(sorted(set(x)))).to_dict()
         
         for s1_id in all_s1_ids:
             match_str = results_map.get(s1_id, "")
-            f.write(f"{s1_id}\t{match_str}\n")
+            out_f.write(f"{s1_id}\t{match_str}\n")
             
+        print(f"  Processed chunk {i+1} (~{min((i+1)*100000, 5300000)} S1 items)...")
+        del df, s1_df, t_df, X, matches, pairs_df, chunk; gc.collect()
+        
+    out_f.close()
     print("\nSUCCESS! Files are ready in the output/ folder.")
     print("- output/candidate_pairs.tsv")
     print("- output/matching_results.tsv")
