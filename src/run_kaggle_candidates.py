@@ -70,7 +70,7 @@ if __name__ == "__main__":
     print("Pass 1: S3 Frequencies...")
     s3_freq = count_freq("dataset/train/train_source3.tsv")
     
-    ok_keys = {k for k,v in {**s2_freq, **s3_freq}.items() if v <= THRESHOLD}
+    ok_keys = {k for k,v in (s2_freq + s3_freq).items() if v <= THRESHOLD}
     del s2_freq, s3_freq; gc.collect()
     
     print("Pass 2: Building Index...")
