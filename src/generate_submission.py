@@ -98,6 +98,7 @@ def infer_test_matches():
         for s1_id in all_s1_ids:
             match_str = results_map.get(s1_id, "")
             out_f.write(f"{s1_id}\t{match_str}\n")
+        out_f.flush()
             
         print(f"  Processed chunk {i+1} (~{min((i+1)*100000, 5300000)} S1 items)...")
         del df, s1_df, t_df, X, matches, pairs_df, chunk; gc.collect()
