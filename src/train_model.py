@@ -80,9 +80,9 @@ def train_and_evaluate(X, y):
     from sklearn.model_selection import train_test_split
     X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    model = lgb.LGBMClassifier(n_estimators=300, learning_rate=0.05, max_depth=7, class_weight='balanced', random_state=42, n_jobs=-1)
+    model = lgb.LGBMClassifier(n_estimators=1000, learning_rate=0.03, max_depth=11, num_leaves=255, class_weight='balanced', random_state=42, n_jobs=-1)
     
-    model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_metric='logloss', callbacks=[lgb.early_stopping(stopping_rounds=30)])
+    model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_metric='logloss', callbacks=[lgb.early_stopping(stopping_rounds=50)])
     
     importances = list(zip(X.columns, model.feature_importances_))
     importances.sort(key=lambda x: x[1], reverse=True)

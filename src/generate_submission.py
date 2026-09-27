@@ -48,9 +48,13 @@ def infer_test_matches():
     s3 = pd.read_csv("dataset/test/test_source3.tsv", sep="\t", dtype=str, keep_default_na=False, usecols=['entity_id', 'business_name', 'business_address', 'country']).set_index('entity_id')
     print("S3 Loaded.")
 
-    # Open output file
-    out_f = open('output/matching_results.tsv', 'w', encoding='utf-8')
-    out_f.write("source1_entity_id\tmatched_entity_ids\n")
+    # Open output files for threshold sweeping
+    out_strict = open('output/matching_results_strict.tsv', 'w', encoding='utf-8')
+    out_bal = open('output/matching_results_balanced.tsv', 'w', encoding='utf-8')
+    out_loose = open('output/matching_results_loose.tsv', 'w', encoding='utf-8')
+    
+    for f in [out_strict, out_bal, out_loose]:
+        f.write("source1_entity_id\tmatched_entity_ids\n")
     
     print("Processing candidate pairs in chunks...")
     reader = pd.read_csv("output/candidate_pairs.tsv", sep="\t", dtype=str, keep_default_na=False, chunksize=100_000)
@@ -63,7 +67,10 @@ def infer_test_matches():
         pairs_df = chunk.explode('cand_list').rename(columns={'cand_list': 'target_id'}).dropna(subset=['target_id'])
         
         if len(pairs_df) == 0:
-            for s1_id in all_s1_ids: out_f.write(f"{s1_id}\t\n")
+            for s1_id in all_s1_ids:
+                out_strict.write(f"{s1_id}\t\n")
+                out_bal.write(f"{s1_id}\t\n")
+                out_loose.write(f"{s1_id}\t\n")
             continue
             
         pairs_df = pairs_df[['source1_entity_id', 'target_id']]
@@ -90,23 +97,38 @@ def infer_test_matches():
         
         X = engineer_features(s1_df, t_df)
         probs = model.predict(X)
-        df['is_match'] = (probs >= best_thresh).astype(int)
         
-        matches = df[df['is_match'] == 1]
-        results_map = matches.groupby('source1_entity_id')['target_id'].apply(lambda x: ','.join(sorted(set(x)))).to_dict()
+        # Threshold sweeping
+        df['is_strict'] = (probs >= best_thresh).astype(int)
+        df['is_bal'] = (probs >= max(0.50, best_thresh - 0.20)).astype(int)
+        df['is_loose'] = (probs >= max(0.10, best_thresh - 0.45)).astype(int)
+        
+        res_strict = df[df['is_strict'] == 1].groupby('source1_entity_id')['target_id'].apply(lambda x: ','.join(sorted(set(x)))).to_dict()
+        res_bal = df[df['is_bal'] == 1].groupby('source1_entity_id')['target_id'].apply(lambda x: ','.join(sorted(set(x)))).to_dict()
+        res_loose = df[df['is_loose'] == 1].groupby('source1_entity_id')['target_id'].apply(lambda x: ','.join(sorted(set(x)))).to_dict()
         
         for s1_id in all_s1_ids:
-            match_str = results_map.get(s1_id, "")
-            out_f.write(f"{s1_id}\t{match_str}\n")
-        out_f.flush()
+            out_strict.write(f"{s1_id}\t{res_strict.get(s1_id, '')}\n")
+            out_bal.write(f"{s1_id}\t{res_bal.get(s1_id, '')}\n")
+            out_loose.write(f"{s1_id}\t{res_loose.get(s1_id, '')}\n")
+            
+        for f in [out_strict, out_bal, out_loose]: f.flush()
             
         print(f"  Processed chunk {i+1} (~{min((i+1)*100000, 5300000)} S1 items)...")
-        del df, s1_df, t_df, X, matches, pairs_df, chunk; gc.collect()
+        del df, s1_df, t_df, X, pairs_df, chunk; gc.collect()
         
-    out_f.close()
+    for f in [out_strict, out_bal, out_loose]: f.close()
+    
+    # Symlink the "best guess" to the regular name for default validator
+    if os.path.exists('output/matching_results.tsv'): os.remove('output/matching_results.tsv')
+    import shutil
+    shutil.copy('output/matching_results_balanced.tsv', 'output/matching_results.tsv')
+    
     print("\nSUCCESS! Files are ready in the output/ folder.")
     print("- output/candidate_pairs.tsv")
-    print("- output/matching_results.tsv")
+    print("- output/matching_results_strict.tsv (95%)")
+    print("- output/matching_results_balanced.tsv (75%)")
+    print("- output/matching_results_loose.tsv (50%)")
 
 if __name__ == "__main__":
     generate_test_candidates()

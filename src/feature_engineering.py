@@ -55,6 +55,7 @@ def engineer_features(s1_df, cand_df):
         f['name_fuzz_ratio'] = fuzz.ratio(s1_n, c_n) / 100.0
         f['name_fuzz_token_sort'] = fuzz.token_sort_ratio(s1_n, c_n) / 100.0
         f['name_jaccard'] = compute_jaccard(s1_n, c_n)
+        f['name_jaro'] = fuzz.jaro_winkler(s1_n, c_n)
         
         # Address Features
         s1_a = s1_a or ""
@@ -62,6 +63,7 @@ def engineer_features(s1_df, cand_df):
         f['addr_fuzz_token_set'] = fuzz.token_set_ratio(s1_a, c_a) / 100.0
         f['addr_jaccard'] = compute_jaccard(s1_a, c_a)
         f['addr_num_jaccard'] = compute_num_jaccard(s1_a, c_a)
+        f['addr_jaro'] = fuzz.jaro_winkler(s1_a, c_a)
         
         features.append(f)
         
